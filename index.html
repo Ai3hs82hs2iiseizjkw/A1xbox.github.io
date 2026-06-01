@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>احمد الكعبي — للاجهزة الالكترونية</title>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root {
     --black: #030303;
@@ -58,6 +59,44 @@
     background-size: 40px 40px;
     pointer-events: none;
     z-index: 9998;
+  }
+
+  /* LIVE INDICATOR */
+  .live-indicator {
+    position: fixed;
+    bottom: 2rem;
+    left: 2rem;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    font-size: 0.75rem;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: #555;
+    z-index: 1001;
+  }
+
+  .live-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #555;
+    transition: all 0.3s;
+  }
+
+  .live-indicator.connected .live-dot {
+    background: var(--green);
+    box-shadow: 0 0 10px var(--green);
+    animation: pulse 2s infinite;
+  }
+
+  .live-indicator.connected {
+    color: var(--green);
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
   }
 
   /* NAV */
@@ -658,12 +697,6 @@
   .apl-btn-del { border-color: #555; color: #ff5050; }
   .apl-btn-del:hover { background: rgba(255,50,50,0.1); border-color: #ff5050; }
 
-  .webhook-section {
-    margin-top: 1.5rem;
-    padding-top: 1.5rem;
-    border-top: 1px solid rgba(57,255,20,0.1);
-  }
-
   .discord-status {
     display: flex;
     align-items: center;
@@ -728,6 +761,12 @@
 </style>
 </head>
 <body>
+
+<!-- LIVE INDICATOR -->
+<div class="live-indicator" id="live-indicator">
+  <span class="live-dot"></span>
+  <span>Loading...</span>
+</div>
 
 <!-- NAV -->
 <nav>
@@ -830,7 +869,7 @@
   <div id="admin-content">
     <div class="admin-grid">
 
-      <!-- LEFT: Add / Edit Product + Webhook -->
+      <!-- LEFT: Add / Edit Product -->
       <div>
         <div class="admin-card">
           <div class="admin-card-title" id="form-title">Add Product</div>
@@ -858,22 +897,16 @@
               <option value="out">Out of Stock</option>
             </select>
           </div>
+          <div class="form-group">
+            <label>Category</label>
+            <select id="p-category">
+              <option value="series">Series X/One Games</option>
+              <option value="xbox360">Xbox 360 Games</option>
+              <option value="console">Consoles</option>
+            </select>
+          </div>
           <button class="btn-admin" onclick="saveProduct()">Save Product</button>
           <button class="btn-admin" style="background:#222;color:#888;margin-top:0.4rem" onclick="cancelEdit()">Cancel Edit</button>
-        </div>
-
-        <!-- Webhook Config -->
-        <div class="admin-card" style="margin-top:1.5rem;">
-          <div class="admin-card-title">Discord Webhook</div>
-          <div class="form-group">
-            <label>Webhook URL</label>
-            <input type="text" id="webhook-url" placeholder="https://discord.com/api/webhooks/...">
-          </div>
-          <button class="btn-admin" onclick="saveWebhook()">Save Webhook</button>
-          <div class="discord-status" id="discord-status">
-            <span class="dot"></span>
-            <span id="discord-status-text">No webhook configured</span>
-          </div>
         </div>
 
         <!-- Change PIN -->
@@ -916,45 +949,69 @@
 </div>
 
 <script>
-  // ─── STATE ──────────────────────────────────────────────
+  // ─── SUPABASE CONFIG ─────────────────────────────────────
+  const SUPABASE_URL = 'https://ysfduhuppdrdcnpfnldc.supabase.co';
+  const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlzZmR1aHVwcGRyZGNucGZubGRjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MDAwMDAwMDAsImV4cCI6MTk5OTk5OTk5OX0.EXy2Ls5sDfn0j1gKzZKx9qZZ1cZ0fZ0fZ0fZ0fZ0fZ0';
+  const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+  // ─── STATE ────────────────────────────��─────────────────
   const STORAGE_KEY = 'xzone_products';
-  const WEBHOOK_KEY = 'xzone_webhook';
-  const PIN_KEY     = 'xzone_pin';
-  const SOCIAL_KEY  = 'xzone_socials';
+  const PIN_KEY = 'xzone_pin';
+  const SOCIAL_KEY = 'xzone_socials';
 
   let products = [];
   let editingId = null;
-
-  const DEFAULT_PRODUCTS = [
-    { id: uid(), name: 'Xbox Elite Controller Series 2', price: '£149.99', desc: 'Pro-level customisable controller with adjustable tension thumbsticks and wrap-around rubberised grip.', img: '', stock: 'in' },
-    { id: uid(), name: 'Xbox Wireless Headset', price: '£89.99', desc: 'Spatial audio, flip-to-mute mic, and 15hr battery. Pairs wirelessly to any Xbox or PC in seconds.', img: '', stock: 'in' },
-    { id: uid(), name: 'Forza Horizon 5', price: '£34.99', desc: 'Over 500 cars, open-world Mexico, and endless online events. The definitive Xbox racing experience.', img: '', stock: 'in' },
-    { id: uid(), name: 'Xbox Series X Controller', price: '£54.99', desc: 'Carbon Black standard controller with textured grip and USB-C charging. Compatible with all Xbox & PC.', img: '', stock: 'in' },
-    { id: uid(), name: 'Xbox Play & Charge Kit', price: '£24.99', desc: 'Rechargeable battery and USB-C cable. Never buy AA batteries again. 30hr battery life.', img: '', stock: 'out' },
-    { id: uid(), name: 'Halo Infinite', price: '£29.99', desc: 'Master Chief returns. Campaign plus free-to-play multiplayer. A must-have Xbox exclusive.', img: '', stock: 'in' },
-  ];
+  let supabaseConnected = false;
 
   // ─── UTILS ──────────────────────────────────────────────
-  function uid() {
-    return Math.random().toString(36).slice(2, 10);
-  }
-
   function save() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(products));
-  }
-
-  function load() {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    products = raw ? JSON.parse(raw) : [...DEFAULT_PRODUCTS];
-    if (!raw) save();
   }
 
   function getPin() {
     return localStorage.getItem(PIN_KEY) || '1234';
   }
 
-  function getWebhook() {
-    return localStorage.getItem(WEBHOOK_KEY) || '';
+  // ─── FETCH FROM SUPABASE ────────────────────────────────
+  async function fetchProducts() {
+    try {
+      const { data, error } = await supabase
+        .from('products')
+        .select('*');
+      
+      if (error) throw error;
+      
+      products = data || [];
+      supabaseConnected = true;
+      updateLiveIndicator(true);
+      save();
+      renderAll();
+    } catch (error) {
+      console.error('Error fetching from Supabase:', error);
+      supabaseConnected = false;
+      updateLiveIndicator(false);
+      loadFromLocal();
+    }
+  }
+
+  function loadFromLocal() {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      products = JSON.parse(raw);
+      renderAll();
+    }
+  }
+
+  // ─── LIVE INDICATOR ─────────────────────────────────────
+  function updateLiveIndicator(connected) {
+    const indicator = document.getElementById('live-indicator');
+    if (connected) {
+      indicator.classList.add('connected');
+      indicator.innerHTML = '<span class="live-dot"></span><span>Live</span>';
+    } else {
+      indicator.classList.remove('connected');
+      indicator.innerHTML = '<span class="live-dot"></span><span>Offline</span>';
+    }
   }
 
   // ─── RENDER ─────────────────────────────────────────────
@@ -975,7 +1032,7 @@
         </div>
         <div class="product-body">
           <div class="product-name">${p.name}</div>
-          <div class="product-desc">${p.desc}</div>
+          <div class="product-desc">${p.description || ''}</div>
           <div class="product-footer">
             <div class="product-price">${p.price}</div>
             <span class="stock-badge ${p.stock === 'in' ? 'stock-in' : 'stock-out'}">
@@ -1001,9 +1058,9 @@
           <div class="apl-price">${p.price} · <span style="color:${p.stock === 'in' ? 'var(--green)' : '#ff5050'}">${p.stock === 'in' ? 'In Stock' : 'Out of Stock'}</span></div>
         </div>
         <div class="apl-actions">
-          <button class="apl-btn apl-btn-edit" onclick="editProduct('${p.id}')">Edit</button>
-          <button class="apl-btn apl-btn-stock" onclick="toggleStock('${p.id}')">${p.stock === 'in' ? 'OOS' : 'Restock'}</button>
-          <button class="apl-btn apl-btn-del" onclick="deleteProduct('${p.id}')">Del</button>
+          <button class="apl-btn apl-btn-edit" onclick="editProduct(${p.id})">Edit</button>
+          <button class="apl-btn apl-btn-stock" onclick="toggleStock(${p.id})">${p.stock === 'in' ? 'OOS' : 'Restock'}</button>
+          <button class="apl-btn apl-btn-del" onclick="deleteProduct(${p.id})">Del</button>
         </div>
       </div>
     `).join('');
@@ -1015,31 +1072,40 @@
   }
 
   // ─── PRODUCT CRUD ────────────────────────────────────────
-  function saveProduct() {
-    const name  = document.getElementById('p-name').value.trim();
+  async function saveProduct() {
+    const name = document.getElementById('p-name').value.trim();
     const price = document.getElementById('p-price').value.trim();
-    const desc  = document.getElementById('p-desc').value.trim();
-    const img   = document.getElementById('p-img').value.trim();
+    const desc = document.getElementById('p-desc').value.trim();
+    const img = document.getElementById('p-img').value.trim();
     const stock = document.getElementById('p-stock').value;
+    const category = document.getElementById('p-category').value;
 
     if (!name || !price) { showToast('Name and price required', true); return; }
 
     if (editingId) {
-      const idx = products.findIndex(p => p.id === editingId);
-      if (idx > -1) {
-        products[idx] = { ...products[idx], name, price, desc, img, stock };
-        discordNotify(`✏️ **PRODUCT UPDATED**\n**${name}** — ${price}\nStatus: ${stock === 'in' ? '✅ In Stock' : '❌ Out of Stock'}`);
-        showToast('Product updated');
+      const { error } = await supabase
+        .from('products')
+        .update({ name, price, description: desc, img, stock, category })
+        .eq('id', editingId);
+      
+      if (error) {
+        showToast('Error updating product', true);
+        return;
       }
+      showToast('Product updated');
     } else {
-      const p = { id: uid(), name, price, desc, img, stock };
-      products.push(p);
-      discordNotify(`➕ **PRODUCT ADDED**\n**${name}** — ${price}\n${desc}\nStatus: ${stock === 'in' ? '✅ In Stock' : '❌ Out of Stock'}`);
+      const { error } = await supabase
+        .from('products')
+        .insert([{ name, price, description: desc, img, stock, category }]);
+      
+      if (error) {
+        showToast('Error adding product', true);
+        return;
+      }
       showToast('Product added');
     }
 
-    save();
-    renderAll();
+    await fetchProducts();
     cancelEdit();
   }
 
@@ -1047,80 +1113,63 @@
     const p = products.find(x => x.id === id);
     if (!p) return;
     editingId = id;
-    document.getElementById('p-name').value  = p.name;
+    document.getElementById('p-name').value = p.name;
     document.getElementById('p-price').value = p.price;
-    document.getElementById('p-desc').value  = p.desc;
-    document.getElementById('p-img').value   = p.img || '';
+    document.getElementById('p-desc').value = p.description || '';
+    document.getElementById('p-img').value = p.img || '';
     document.getElementById('p-stock').value = p.stock;
+    document.getElementById('p-category').value = p.category;
     document.getElementById('form-title').textContent = 'Edit Product';
     document.querySelector('#admin-content').scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   function cancelEdit() {
     editingId = null;
-    document.getElementById('p-name').value  = '';
+    document.getElementById('p-name').value = '';
     document.getElementById('p-price').value = '';
-    document.getElementById('p-desc').value  = '';
-    document.getElementById('p-img').value   = '';
+    document.getElementById('p-desc').value = '';
+    document.getElementById('p-img').value = '';
     document.getElementById('p-stock').value = 'in';
+    document.getElementById('p-category').value = 'series';
     document.getElementById('form-title').textContent = 'Add Product';
   }
 
-  function deleteProduct(id) {
+  async function deleteProduct(id) {
     const p = products.find(x => x.id === id);
     if (!p) return;
     if (!confirm(`Delete "${p.name}"?`)) return;
-    products = products.filter(x => x.id !== id);
-    discordNotify(`🗑️ **PRODUCT REMOVED**\n**${p.name}** has been removed from the shop.`);
-    save();
-    renderAll();
+
+    const { error } = await supabase
+      .from('products')
+      .delete()
+      .eq('id', id);
+    
+    if (error) {
+      showToast('Error deleting product', true);
+      return;
+    }
+
+    await fetchProducts();
     showToast('Product removed');
   }
 
-  function toggleStock(id) {
+  async function toggleStock(id) {
     const p = products.find(x => x.id === id);
     if (!p) return;
-    p.stock = p.stock === 'in' ? 'out' : 'in';
-    const label = p.stock === 'in' ? '✅ RESTOCKED' : '❌ OUT OF STOCK';
-    discordNotify(`${label}\n**${p.name}** is now ${p.stock === 'in' ? 'back in stock!' : 'out of stock.'}`);
-    save();
-    renderAll();
-    showToast(p.stock === 'in' ? 'Marked as restocked' : 'Marked out of stock');
-  }
+    const newStock = p.stock === 'in' ? 'out' : 'in';
 
-  // ─── DISCORD ────────────────────────────────────────────
-  async function discordNotify(message) {
-    const url = getWebhook();
-    if (!url) return;
-    try {
-      await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: `🟢 **XZONE SHOP UPDATE**\n${message}` })
-      });
-    } catch (e) {
-      console.warn('Discord webhook failed:', e);
+    const { error } = await supabase
+      .from('products')
+      .update({ stock: newStock })
+      .eq('id', id);
+    
+    if (error) {
+      showToast('Error updating stock', true);
+      return;
     }
-  }
 
-  function saveWebhook() {
-    const url = document.getElementById('webhook-url').value.trim();
-    localStorage.setItem(WEBHOOK_KEY, url);
-    updateDiscordStatus(url);
-    showToast('Webhook saved');
-    if (url) discordNotify('🔗 Webhook connected successfully! XZONE admin is live.');
-  }
-
-  function updateDiscordStatus(url) {
-    const el = document.getElementById('discord-status');
-    const txt = document.getElementById('discord-status-text');
-    if (url) {
-      el.className = 'discord-status ok';
-      txt.textContent = 'Webhook configured';
-    } else {
-      el.className = 'discord-status';
-      txt.textContent = 'No webhook configured';
-    }
+    await fetchProducts();
+    showToast(newStock === 'in' ? 'Marked as restocked' : 'Marked out of stock');
   }
 
   // ─── SOCIALS ─────────────────────────────────────────────
@@ -1150,9 +1199,6 @@
     if (input === getPin()) {
       document.getElementById('pin-screen').style.display = 'none';
       document.getElementById('admin-content').classList.add('active');
-      const wh = getWebhook();
-      if (wh) document.getElementById('webhook-url').value = wh;
-      updateDiscordStatus(wh);
       renderAdminList();
     } else {
       document.getElementById('pin-error').style.display = 'block';
@@ -1193,7 +1239,6 @@
   }
 
   // ─── KEYBOARD SHORTCUT ───────────────────────────────────
-  // Press Ctrl+Shift+A to open admin
   document.addEventListener('keydown', e => {
     if (e.ctrlKey && e.shiftKey && e.key === 'A') {
       e.preventDefault();
@@ -1206,15 +1251,15 @@
     }
   });
 
-  // ─── HASH ROUTING ────────────────────────────────────────
-  if (window.location.hash === '#admin' || window.location.pathname.endsWith('/admin')) {
-    window.addEventListener('load', openAdmin);
-  }
+  // ─── AUTO-REFRESH ────────────────────────────────────────
+  setInterval(() => {
+    fetchProducts();
+  }, 30000); // Refresh every 30 seconds
 
   // ─── INIT ────────────────────────────────────────────────
-  load();
+  fetchProducts();
   loadSocials();
-  renderAll();
+  updateLiveIndicator(false);
 </script>
 </body>
 </html>
