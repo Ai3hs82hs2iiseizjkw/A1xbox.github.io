@@ -1,0 +1,18 @@
+{
+  "name": "xzone-xbox-shop",
+  "version": "1.0.0",
+  "description": "Discord bot and website for Xbox product shop",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js",
+    "dev": "nodemon bot.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.13.0",
+    "dotenv": "^16.3.1",
+    "@supabase/supabase-js": "^2.38.4"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+}
